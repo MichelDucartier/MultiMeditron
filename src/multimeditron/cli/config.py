@@ -269,7 +269,7 @@ class ActorConfig(BaseModel):
     def to_hydra_conf(self):
         return {
             "_target_": "verl.workers.config.ActorConfig",
-            "strategy": "fsdp" if self.fsdp.fsdp_version == 1 else "fsdp2",
+            "strategy": "fsdp" if self.fsdp.fsdp_version == 1 else "fsdp2", # TODO !!!
             "ppo_mini_batch_size": self.ppo_mini_batch_size,
             "ppo_micro_batch_size": None, # to be filled later
             "ppo_micro_batch_size_per_gpu": None, # to be filled later
@@ -292,6 +292,7 @@ class ActorConfig(BaseModel):
             "shuffle": self.shufle,
             "checkpoint": self.checkpoint.to_hydra_conf(),
             "optim": self.optim.to_hydra_conf(),
+            "fsdp": self.fsdp.to_hydra_conf(),
             "used_fused_kernels": self.use_fused_kernels,
             "profiler": self.profiler.to_hydra_conf(),
         }
@@ -392,7 +393,7 @@ class RolloutConfig(BaseModel):
             "profiler": self.profiler.to_hydra_conf(),
         }
 
-class HfConfig(BaseModel):
+class ModelConfig(BaseModel):
     path: str = Field("???", description="Path to the HuggingFace repository or local directory.")
     use_shm: bool = Field(False, description="Whether to use shared memory for loading model weights.")
     
@@ -482,11 +483,10 @@ class DataConfig(BaseModel):
             "apply_chat_template_kwargs": {},
         }
 
-
-class ActorRolloutRefConfig(ActorConfig):
+class ActorRolloutRefConfig(BaseModel):
     actor: ActorConfig = Field(default_factory=ActorConfig, description="Configuration for the actor model.")
     rollout: RolloutConfig = Field(default_factory=RolloutConfig, description="Configuration for the rollout model.")
-    model: HfConfig = Field(default_factory=HfConfig, description="Configuration for loading models from HuggingFace or local path.")
+    model: ModelConfig = Field(default_factory=ModelConfig, description="Configuration for loading models from HuggingFace or local path.")
 
     def to_hydra_conf(self):
         return {
@@ -499,6 +499,41 @@ class ActorRolloutRefConfig(ActorConfig):
             "model": self.model.to_hydra_conf(),
         }
     
+class RewardConfig(BaseModel):
+    enable: bool = Field(False, description="Whether to enable the reward model. If False, we compute the reward only with the user-defined reward functions.")
+
+    enable_resource_pool: bool = Field(False, description="Whether to deploy the model to a separate pool. If true, n_gpus_per_node and n_nodes will be used to determine the resource pool.")
+    n_gpus_per_node: Annotated[int, Field(gt=0)] = Field(1, description="Number of GPUs per node for the reward model.")
+    n_nodes: Annotated[int, Field(gt=0)] = Field(1, description="Number of nodes for the reward model.")
+
+    model: ModelConfig = Field(default_factory=ModelConfig, description="Configuration for loading the reward model from HuggingFace or local path.")
+
+    max_length: Optional[Annotated[int, Field(gt=0)]] = Field(None, description="Maximum length for the reward model. If None, use the model's default max length.")
+    use_dynamic_bsz: bool = Field(False, description="Whether to automatically adjust batch size based on GPU memory.")
+    forward_max_token_len_per_gpu: Annotated[int, Field(gt=0)] = Field(8192, description="Maximum token length per GPU for the reward model")
+    launch_reward_fn_async: bool = Field(False, description="Whether to launch the reward function asynchronously.")
+    
+    profiler: ProfilerConfig = Field(default_factory=ProfilerConfig, description="Profiler configuration for the reward model.")
+
+    def to_hydra_conf(self):
+        return {
+            "enable": self.enable,
+
+            "enable_resource_pool": self.enable_resource_pool,
+            "n_gpus_per_node": self.n_gpus_per_node,
+            "nnodes": self.n_nodes,
+
+            "strategy": "fsdp2",
+
+            "model": self.model.to_hydra_conf(),
+            "max_length": self.max_length,
+            "use_dynamic_bsz": self.use_dynamic_bsz,
+            "forward_max_token_len_per_gpu": self.forward_max_token_len_per_gpu,
+            "launch_reward_fn_async": self.launch_reward_fn_async,
+            "profiler": self.profiler.to_hydra_conf(),
+        }
+
+
 class VerlConfig(BaseModel):
     actor_rollout_ref: ActorRolloutRefConfig = Field(default_factory=ActorRolloutRefConfig, description="Configuration for the actor, rollout, and reference models.")
     data: DataConfig = Field(default_factory=DataConfig, description="Configuration for the dataset.")
@@ -507,4 +542,5 @@ class VerlConfig(BaseModel):
         return {
             "actor_rollout_ref": self.actor_rollout_ref.to_hydra_conf(),
             "data": self.data.to_hydra_conf(),
+            "critic": None,
         }
