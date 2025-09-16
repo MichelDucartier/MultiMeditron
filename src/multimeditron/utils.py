@@ -12,6 +12,9 @@ def get_torch_dtype(dtype: torch.dtype | str) -> torch.dtype:
     return dtype
 
 def pydantic_enum[E: enum.Enum](enum_cls: type[E]) -> type[E]:
+    def __str__(self) -> str:
+        return self.name.lower().replace('_', '-')
+
     def __get_pydantic_core_schema__(cls: type[E], source_type: Any, handler: GetCoreSchemaHandler):
         assert source_type is cls
         
@@ -20,10 +23,11 @@ def pydantic_enum[E: enum.Enum](enum_cls: type[E]) -> type[E]:
                 return value
             else:
                 name: str = validate_next(value)
+                name = name.upper().replace('-', '_')
                 return enum_cls[name]
 
         def serialize(enum: E):
-            return enum.name
+            return enum.name.lower().replace('_', '-')
         
         expected = [member.name for member in cls]
         name_schema = core_schema.literal_schema(expected)
@@ -34,5 +38,6 @@ def pydantic_enum[E: enum.Enum](enum_cls: type[E]) -> type[E]:
             serialization=core_schema.plain_serializer_function_ser_schema(serialize)
         )
     
+    setattr(enum_cls, '__str__', __str__)
     setattr(enum_cls, '__get_pydantic_core_schema__', classmethod(__get_pydantic_core_schema__))
     return enum_cls
