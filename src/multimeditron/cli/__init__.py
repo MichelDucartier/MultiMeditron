@@ -1,4 +1,4 @@
-from .config import VerlTrainConfig
+from .config import VerlConfig
 from .utils import split_host_port
 
 import click
@@ -37,7 +37,7 @@ def config_verl_generate(output):
     """
     Generate a default configuration file for training the MultiMeditron model.
     """
-    cfg = VerlTrainConfig()
+    cfg = VerlConfig()
     if output is not None:
         with open(output, "w") as f:
             yaml.dump(cfg.model_dump(), f)
@@ -48,8 +48,8 @@ def config_verl_generate(output):
 @main_cli.command(epilog=EPILOG)
 @click.option("--config", "-c", type=click.Path(exists=True), multiple=True, help="Path to the configuration file(s) in YAML format.")
 @click.option("--trust-remote-code/--no-trust-remote-code", default=False, help="Whether to trust remote code when loading models from HuggingFace.")
-@from_pydantic("cfg", VerlTrainConfig)
-def train_verl(cfg: VerlTrainConfig, config: tuple[str] = [], trust_remote_code: bool = False):
+@from_pydantic("cfg", VerlConfig)
+def train_verl(cfg: VerlConfig, config: tuple[str] = [], trust_remote_code: bool = False):
     """
     Train the MultiMeditron model using the specified configuration file.
     """
@@ -62,7 +62,7 @@ def train_verl(cfg: VerlTrainConfig, config: tuple[str] = [], trust_remote_code:
             # Merge configurations
             cli_cfg = cfg.model_dump(exclude_unset=True)
             file_cfg.update(cli_cfg)
-            cfg = VerlTrainConfig.model_validate(file_cfg, strict=True)
+            cfg = VerlConfig.model_validate(file_cfg, strict=True)
 
     # TODO(linjunrong.ocss884): this ENV is left for resolving SGLang conflict with ray devices
     # isolation, will solve in the future

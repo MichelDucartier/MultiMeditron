@@ -1,11 +1,11 @@
 import ray
 import random
-from multimeditron.cli.config import VerlTrainConfig, ModelStrategy, RewardManager
+from multimeditron.cli.config import VerlConfig
 from pprint import pprint
 
 @ray.remote(num_cpus=1)
 class TaskRunner:
-    def run(self, cfg: VerlTrainConfig, trust_remote_code: bool = False):
+    def run(self, cfg: VerlConfig, trust_remote_code: bool = False):
         from transformers import AutoTokenizer
 
         pprint(cfg.model_dump())
