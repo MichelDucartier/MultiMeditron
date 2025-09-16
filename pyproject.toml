@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multimeditron"
+version = "0.1.0"
+description = "Multimeditron: A Multimodal Foundation Model for Medical Image Understanding"
+authors = [
+    { name="Michael Zhang", email="michael.zhang@epfl.ch" },
+    { name="Guillaume Boyé", email="guillaume.boye@epfl.ch" },
+    { name="Alexandre Sallinen", email="alexandre.sallinen@epfl.ch" },
+    { name="Fabrice Nemo", email="fabrice.nemo@epfl.ch" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "numpy<2.0.0",
+    "h5py",
+    "click",
+    "ray",
+    "pydantic",
+    "pydanclick",
+    "webdataset",
+    "transformers",
+    "einops",
+    "monai==1.3.2",
+    "open_clip_torch",
+    "deepspeed",
+    "accelerate",
+    "hf_transfer",
+    "wandb",
+    "deprecated",
+    "benchy @ git+https://github.com/lukasgd/benchy.git@slurm",
+    "perception_models @ git+https://github.com/MichelDucartier/perception_models.git",
+    "flash-attn",
+    "datasets @ git+https://github.com/Androz2091/simon-huggingface-datasets.git"
+]
+
+[project.optional-dependencies]
+dev = []
+
+[project.scripts]
+multimeditron = "multimeditron.cli:main_cli"
+mm = "multimeditron.cli:main_cli"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

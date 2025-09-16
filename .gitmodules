@@ -1,0 +1,3 @@
+[submodule "third-party/verl"]
+	path = third-party/verl
+	url = git@github.com:EPFLiGHT/verl.git

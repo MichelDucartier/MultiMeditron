@@ -1,0 +1,45 @@
+output_dir: "../training_clip/clip-splade-US-train"
+vision_model_name: "openai/clip-vit-base-patch32"
+text_model_name: "naver/splade-v3"
+dataset_configs:
+  - BUSI:
+      dataset_name: "/mloscratch/homes/nemo/training/US/BUSI/BUSI-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 78
+  - CAMUS:
+      dataset_name: "/mloscratch/homes/nemo/training/US/CAMUS/CAMUS-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 2118
+  - COVID-US:
+      dataset_name: "/mloscratch/homes/nemo/training/US/COVID-US/COVID-US-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 2384
+  - ct2:
+      dataset_name: "/mloscratch/homes/nemo/training/US/ct2/ct2-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 410
+  - DDTI:
+      dataset_name: "/mloscratch/homes/nemo/training/US/DDTI/DDTI-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 35
+  - US_SEG:
+      dataset_name: "/mloscratch/homes/nemo/training/US/US_SEG/US_SEG-train.jsonl"
+      image_column: "modalities"
+      caption_column: "text"
+      weight: 63
+
+remove_unused_columns: false
+do_train: true
+per_device_train_batch_size: 64
+learning_rate: 5.0e-4
+warmup_steps: 2000
+weight_decay: 0.2
+save_steps: 0.1
+num_train_epochs: 3
+dataloader_drop_last: true
+overwrite_output_dir: true

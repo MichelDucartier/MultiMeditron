@@ -1,0 +1,27 @@
+{
+	"name": "Esoterik Env",
+	"build": { 
+		"context": "..",
+		"dockerfile": "Dockerfile"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+			"moby": true,
+			"azureDnsAutoDetection": true,
+			"installDockerBuildx": true,
+			"installDockerComposeSwitch": true,
+			"version": "latest",
+			"dockerDashComposeVersion": "latest"
+		},
+		"ghcr.io/devcontainers/features/git-lfs:1": {
+			"autoPull": true,
+			"version": "latest"
+		}
+	},
+	"customizations": {
+		"vscode": {
+		  "extensions": ["ms-python.python", "GitHub.copilot", "ms-toolsai.jupyter", "bradlc.vscode-tailwindcss", "ritwickdey.LiveServer", "hediet.vscode-drawio"]
+		}
+	  }
+
+}

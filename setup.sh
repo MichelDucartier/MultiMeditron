@@ -1,0 +1,10 @@
+export HF_HUB_ENABLE_HF_TRANSFER=1
+export TOKENIZERS_PARALLELISM=false
+export WANDB_MODE="online"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export TORCH_NCCL_AVOID_RECORD_STREAMS=1
+export NCCL_TIMEOUT=900  # seconds
+export NCCL_IB_HCA=mlx5_bond_
+export NCCL_SOCKET_NTHREADS=4
+export NCCL_NSOCKS_PERTHREAD=$RUNAI_NUM_OF_GPUS
+

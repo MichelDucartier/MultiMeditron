@@ -1,0 +1,19 @@
+image = "/capstor/scratch/cscs/lukasd/images/ngc-multimeditron+24.10.sqsh"
+
+mounts = [
+  "/capstor",
+  "/iopsstor",
+  "/etc/slurm:/etc/slurm",
+  "/users/$USER/.vscode-server",
+  "/users/$USER/.wget-hsts",
+  "/users/$USER/.bash_history",
+]
+
+writable = true
+
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "true"
+com.hooks.aws_ofi_nccl.variant = "cuda12"
+
+[env]
+NCCL_DEBUG = "INFO"
