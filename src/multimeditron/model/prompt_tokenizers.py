@@ -5,6 +5,7 @@ import torch
 import copy
 import numpy as np
 from torch.nn.utils.rnn import pad_sequence
+from transformers.models.deprecated.transfo_xl.tokenization_transfo_xl import tokenize_numbers
 
 from multimeditron.model.constants import (
     NUM_EMBEDDINGS_KEY, CONVERSATIONS_KEY, TEXT_KEY,
@@ -67,7 +68,7 @@ class PromptTokenizer(abc.ABC):
             tokenized_conversations = self.tokenize_conversation(conversations_samples, conversations_modalities, **kwargs)
 
         tokenized_texts = []
-        if len(tokenized_texts) > 0:
+        if len(text_samples) > 0:
             tokenized_texts = self.tokenize_text(text_samples, text_modalities)
         
         tokenized = tokenized_conversations + tokenized_texts
@@ -115,9 +116,9 @@ class PromptTokenizer(abc.ABC):
             for key in padded_tokenized.keys():
                 padded_tokenized[key].append(sample[key])
 
-        res = dict() 
+        res = dict()
         for key in padded_tokenized:
-            res[key] = pad_sequence(padded_tokenized[key], 
+            res[key] = pad_sequence(padded_tokenized[key],
                                     padding_side=self.tokenizer.padding_side, 
                                     padding_value=padding_value[key],
                                     batch_first=True)

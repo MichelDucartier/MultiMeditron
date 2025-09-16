@@ -41,7 +41,7 @@ class MoEGatingNetwork(torch.nn.Module):
     def __init__(self, num_experts: int, top_k: int = 1):
         super().__init__()
         self.top_k = top_k
-        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+        self.clip_model = AutoModel.from_pretrained("openai/clip-vit-large-patch14")
         self.processor = AutoImageProcessor.from_pretrained("openai/clip-vit-large-patch14")
 
         self.input_dim = self.clip_model.vision_embed_dim
@@ -71,7 +71,7 @@ class ImageModality(AbstractModality):
 
         self._embedding_size = None
         for idx, clip_name in enumerate(config.expert_clip_names):
-            expert_model = CLIPModel.from_pretrained(clip_name, trust_remote_code=True)
+            expert_model = AutoModel.from_pretrained(clip_name, trust_remote_code=True)
 
             if self._embedding_size is None:
                 self._embedding_size = expert_model.vision_embed_dim

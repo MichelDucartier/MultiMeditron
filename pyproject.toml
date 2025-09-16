@@ -20,6 +20,7 @@ dependencies = [
     "h5py",
     "click",
     "ray",
+    "hydra-core",
     "pydantic",
     "pydanclick",
     "webdataset",
