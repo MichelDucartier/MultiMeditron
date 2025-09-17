@@ -29,7 +29,7 @@ def pydantic_enum[E: enum.Enum](enum_cls: type[E]) -> type[E]:
         def serialize(enum: E):
             return enum.name.lower().replace('_', '-')
         
-        expected = [member.name for member in cls]
+        expected = [member.name.lower().replace('_', '-') for member in cls]
         name_schema = core_schema.literal_schema(expected)
         
         return core_schema.no_info_wrap_validator_function(

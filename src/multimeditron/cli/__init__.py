@@ -47,13 +47,15 @@ def config_verl_generate(output):
 
 @main_cli.command(epilog=EPILOG)
 @click.option("--config", "-c", type=click.Path(exists=True), multiple=True, help="Path to the configuration file(s) in YAML format.")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
 @click.option("--trust-remote-code/--no-trust-remote-code", default=False, help="Whether to trust remote code when loading models from HuggingFace.")
-@from_pydantic("cfg", VerlConfig)
-def train_verl(cfg: VerlConfig, config: tuple[str] = [], trust_remote_code: bool = False):
+def train_verl(config: tuple[str] = [], trust_remote_code: bool = False, verbose: bool = False):
     """
     Train the MultiMeditron model using the specified configuration file.
     """
     # Load and merge configuration files from YAML
+    cfg = VerlConfig()
+
     for cfg_path in config:
         logger.info(f"Loading configuration from {cfg_path}")
         with open(cfg_path, "r") as f:
@@ -61,8 +63,9 @@ def train_verl(cfg: VerlConfig, config: tuple[str] = [], trust_remote_code: bool
 
             # Merge configurations
             cli_cfg = cfg.model_dump(exclude_unset=True)
-            file_cfg.update(cli_cfg)
-            cfg = VerlConfig.model_validate(file_cfg, strict=True)
+            cli_cfg.update(file_cfg)
+            # file_cfg.update(cli_cfg)
+            cfg = VerlConfig.model_validate(cli_cfg, strict=True)
 
     # TODO(linjunrong.ocss884): this ENV is left for resolving SGLang conflict with ray devices
     # isolation, will solve in the future
@@ -93,5 +96,5 @@ def train_verl(cfg: VerlConfig, config: tuple[str] = [], trust_remote_code: bool
 
     from multimeditron.verl import TaskRunner
     runner = TaskRunner.remote()
-    ray.get(runner.run.remote(cfg, trust_remote_code=trust_remote_code))
+    ray.get(runner.run.remote(cfg, trust_remote_code=trust_remote_code, verbose=verbose))
 

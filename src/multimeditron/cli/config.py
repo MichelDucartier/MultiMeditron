@@ -4,31 +4,6 @@ from pydantic import BaseModel, Field
 import pydantic
 from multimeditron.utils import pydantic_enum
 
-# @pydantic_enum
-# class ModelStrategy(IntEnum):
-#     FSDP = auto()
-#     DEEPSPEED = auto()
-#     MEGATRON = auto()
-
-# @pydantic_enum
-# class RewardManager(IntEnum):
-#     NAIVE = auto()
-#     PRIME = auto()
-#     DAPO = auto()
-#     ASYNC_DAPO = auto()
-
-# @pydantic_enum
-# class AggregationLoss(IntEnum):
-#     GAE = auto()
-#     GRPO = auto()
-#     REINFORCE_PLUS_PLUS = auto()
-#     REINFORCE_PLUS_PLUS_BASELINE = auto()
-#     REMAX = auto()
-#     RLOO = auto()
-#     OPO = auto()
-#     GRPO_PASSK = auto()
-#     GPG = auto()
-
 @pydantic_enum
 class WarmupStyle(IntEnum):
     CONSTANT = auto()
@@ -86,6 +61,25 @@ class TruncationMode(IntEnum):
     RIGHT = auto()
     MIDDLE = auto()
 
+@pydantic_enum
+class AdvantageEstimationMode(IntEnum):
+    GAE = auto()
+    GRPO = auto()
+    REINFORCE_PLUS_PLUS = auto()
+    REINFORCE_PLUS_PLUS_BASELINE = auto()
+    REMAX = auto()
+    RLOO = auto()
+    OPO = auto()
+    GRPO_PASSK = auto()
+    GPG = auto()
+
+@pydantic_enum
+class ResumeMode(IntEnum):
+    AUTO = auto()
+    DISABLE = auto()
+    RESUME_PATH = auto()
+
+
 class OptimConfig(BaseModel):
     lr: float = Field(1e-5, description="Learning rate for the optimizer.")
     lr_warmup_steps_ratio: float = Field(0.0, description="Ratio of total training steps to use for learning rate warmup.")
@@ -109,6 +103,7 @@ class OptimConfig(BaseModel):
             "num_cycles": self.num_cycles,
             "warmup_style": self.warmup_style.name.lower(),
         }
+    
     
 class FsdpConfig(BaseModel):
     wrap_min_num_params: Annotated[int, Field(gt=-1)] = Field(0, description="Minimum number to trigger wrapping a layer with FSDP.")
@@ -327,6 +322,7 @@ class RolloutConfig(BaseModel):
     sglang_kwargs: dict = Field(default_factory=dict, description="Additional keyword arguments to pass to SGLang engine.")
 
     update_weights_bucket_megabytes: Annotated[int, Field(gt=0)] = Field(512, description="Specifies the tensor bucket size (in megabytes) for batch weight updates during rollout operations. This controls the maximum payload size for a signle weight update request. For best performance it is recommended to enable `RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES`, manually set `CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7` when using tensor parallelism >= 8.")
+    layered_summon: bool = Field(False, description="For huge model, layered summon can save memory (prevent OOM) but make it slower")
 
     profiler: ProfilerConfig = Field(default_factory=ProfilerConfig, description="Profiler configuration for the rollout model.")
 
@@ -391,6 +387,7 @@ class RolloutConfig(BaseModel):
             "skip_dump_dir": None,
             "skip_tokenizer_init": True, # Token in, token out for generation
             "profiler": self.profiler.to_hydra_conf(),
+            "layered_summon": self.layered_summon,
         }
 
 class ModelConfig(BaseModel):
@@ -444,7 +441,7 @@ class DataConfig(BaseModel):
     image_key: str = Field("images", description="The field in the dataset where the image is located. Default is 'image'.")
     video_key: str = Field("videos", description="The field in the dataset where the video is located. Default is 'video'.")
 
-    def to_hydra_conf(self):
+    def to_hydra_conf(self, trust_remote_code: bool = False):
         return {
             "tokenizer": self.tokenizer,
             "use_shm": self.use_shm,
@@ -466,7 +463,7 @@ class DataConfig(BaseModel):
             "truncation": str(self.truncation),
             "image_key": self.image_key,
             "video_key": self.video_key,
-            "trust_remote_code": False,
+            "trust_remote_code": trust_remote_code,
             "custom_cls": {
                 "path": None,
                 "name": None,
@@ -488,7 +485,10 @@ class ActorRolloutRefConfig(BaseModel):
     rollout: RolloutConfig = Field(default_factory=RolloutConfig, description="Configuration for the rollout model.")
     model: ModelConfig = Field(default_factory=ModelConfig, description="Configuration for loading models from HuggingFace or local path.")
 
-    def to_hydra_conf(self):
+    hybrid_engine: bool = Field(True, description="Whether to use hybrid engine. Currently only supports hybrid engine")
+    nccl_timeout: int = Field(600, description="NCCL timeout in seconds for distributed training.")
+
+    def to_hydra_conf(self, trust_remote_code: bool = False):
         return {
             "actor": self.actor.to_hydra_conf(),
             "ref": None,
@@ -496,7 +496,9 @@ class ActorRolloutRefConfig(BaseModel):
                 log_prob_use_dynamic_bsz=self.actor.use_dynamic_bsz,
                 ppo_max_token_len_per_gpu=self.actor.ppo_max_token_len_per_gpu,
             ),
-            "model": self.model.to_hydra_conf(),
+            "model": self.model.to_hydra_conf(trust_remote_code=trust_remote_code),
+            "hybrid_engine": self.hybrid_engine,
+            "nccl_timeout": self.nccl_timeout,
         }
     
 class RewardConfig(BaseModel):
@@ -533,14 +535,117 @@ class RewardConfig(BaseModel):
             "profiler": self.profiler.to_hydra_conf(),
         }
 
+class AlgorithmConfig(BaseModel):
+    gamma: float = Field(1.0, description="Discount factor for future rewards.")
+    lam: float = Field(1.0, description="Trade-off between bias and variance in GAE estimation.")
+    adv_estimator: AdvantageEstimationMode = Field(AdvantageEstimationMode.GAE, description="Method for estimating advantages.")
+    grpo_norm_adv_by_std: bool = Field(False, description="Whether to normalize advantages by standard deviation in GRPO.")
+    use_kl_in_reward: bool = Field(False, description="Whether to include KL divergence in the reward signal.")
+    kl_penalty: KLLossType = Field(KLLossType.KL, description="Type of KL penalty to use if use_kl_in_reward is True.")
+    kl_ctrl_adaptive: bool = Field(False, description="Whether to adaptively adjust the KL penalty coefficient.")
+    kl_ctrl_coef: float = Field(0.001, description="Initial KL penalty coefficient.")
+
+    def to_hydra_conf(self):
+        return {
+            "_target_": "verl.workers.config.AlgoConfig",
+            "gamma": self.gamma,
+            "lam": self.lam,
+            "adv_estimator": str(self.adv_estimator),
+            "norm_adv_by_std_in_grpo": self.grpo_norm_adv_by_std,
+            "use_kl_in_reward": self.use_kl_in_reward,
+            "kl_penalty": str(self.kl_penalty),
+            "kl_ctrl": {
+                "_target_": "verl.workers.config.KLControlConfig",
+                "type": "adaptive" if self.kl_ctrl_adaptive else "fixed",
+                "initial_kl_coef": self.kl_ctrl_coef,
+            }
+        }
+
+class TrainerConfig(BaseModel):
+    balance_batch: bool = Field(True, description="Whether to balance the batch size across GPUs.")
+    total_epochs: int = Field(30, description="Total number of epochs to train.")
+    total_training_steps: Optional[int] = Field(None, description="Total number of training steps. If set, overrides derived value from total_epochs.")
+    project_name: str = Field("verl_project", description="Name of the project for logging.")
+    experiment_name: str = Field("debug", description="Name of the experiment for logging.")
+    logger: List[str] = Field(["console", "wandb"], description="List of loggers to use. Options include 'console', 'wandb', 'tensorboard', etc..")
+    log_val_generations: int = Field(0, description="Log validation generations every N epochs. 0 to disable.")
+    rollout_data_dir: Optional[str] = Field(None, description="Directory to save rollout data. If None, rollout data is not saved.")
+    validation_data_dir: Optional[str] = Field(None, description="Directory to save validation data. If None, validation data is not saved.")
+
+    n_gpus_per_node: Annotated[int, Field(gt=0)] = Field(1, description="Number of GPUs per node for the reward model.")
+    n_nodes: Annotated[int, Field(gt=0)] = Field(1, description="Number of nodes for the reward model.")
+    save_freq: int = Field(-1, description="Frequency (in epochs) to save checkpoints.")
+    esi_redundant_time: int = Field(0, description="ESI refers to the elastic server instance used during training, similar to the training plan. This allows to ensure a delay before the end of the training plan to ensure the checkpoint is correctly saved. The advance time is calculated by Advance Time = Longest historical step duration + Checkpoint save duration + ESI Redundant Time.")
+    resume_mode: ResumeMode = Field(ResumeMode.AUTO, description="Mode to resume training. AUTO: automatically find the latest checkpoint in the output directory; DISABLE: do not resume from any checkpoint; RESUME_PATH: resume from a specific checkpoint path (requires specifying `resume_path`).")
+    resume_from_path: Optional[str] = Field(None, description="Path to a specific checkpoint to resume from. Only used if `resume_mode` is set to RESUME_PATH.")
+    val_before_train: bool = Field(True, description="Whether to run validation before starting training.")
+    val_only: bool = Field(False, description="Whether to only run validation without training.")
+    test_freq: int = Field(-1, description="Frequency (in training iterations) to run test/validation. -1 to disable.")
+    critic_warmup: int = Field(0, description="Number of epochs to warm up the critic before training the actor. 0 to disable.")
+    default_hdfs_dir: Optional[str] = Field(None, description="Default HDFS path to distributed fs for saving checkpoints")
+    del_local_ckpt_after_load: bool = Field(False, description="Whether to delete local checkpoint files after uploading to HDFS.")
+    default_local_dir: str = Field("checkpoints/${trainer.project_name}/${trainer.experiment_name}", description="Default local path to save checkpoints")
+    max_actor_ckpt_to_keep: Optional[int] = Field(None, description="Maximum number of actor checkpoints to keep.")
+    max_critic_ckpt_to_keep: Optional[int] = Field(None, description="Maximum number of critic checkpoints to keep.")
+    ray_wait_register_center_timeout: int = Field(300, description="Timeout (in seconds) for Ray workers to wait for registration")
+    device: str = Field("cuda", description="Device to use for training. Options include 'cuda', 'cpu', etc..")
+    use_legacy_worker_impl: bool = Field(False, description="Whether to use the legacy worker implementation.")
+
+    def to_hydra_conf(self):
+        return {
+            "balance_batch": self.balance_batch,
+            "max_epochs": self.total_epochs,
+            "max_training_steps": self.total_training_steps,
+            "project_name": self.project_name,
+            "experiment_name": self.experiment_name,
+            "logger": self.logger,
+            "log_val_generations": self.log_val_generations,
+            "rollout_data_dir": self.rollout_data_dir,
+            "validation_data_dir": self.validation_data_dir,
+            "nnodes": self.n_nodes,
+            "n_gpus_per_node": self.n_gpus_per_node,
+            "save_freq": self.save_freq,
+            "esi_redundant_time": self.esi_redundant_time,
+            "resume_mode": str(self.resume_mode).lower(),
+            "resume_from_path": self.resume_from_path,
+            "val_before_train": self.val_before_train,
+            "val_only": self.val_only,
+            "test_freq": self.test_freq,
+            "critic_warmup": self.critic_warmup,
+            "default_hdfs_dir": self.default_hdfs_dir,
+            "del_local_ckpt_after_load": self.del_local_ckpt_after_load,
+            "default_local_dir": self.default_local_dir,
+            "max_actor_ckpt_to_keep": self.max_actor_ckpt_to_keep,
+            "max_critic_ckpt_to_keep": self.max_critic_ckpt_to_keep,
+            "ray_wait_register_center_timeout": self.ray_wait_register_center_timeout,
+            "device": self.device,
+            "use_legacy_worker_impl": self.use_legacy_worker_impl,
+        }
+
+class RayConfig(BaseModel):
+    dashboard: Optional[str] = Field(None, description="Address of the Ray dashboard, e.g., 'localhost:8265'. If None, Ray dashboard is not used.")
+    num_cpus: Annotated[int, Field(gt=0)] = Field(4, description="Number of CPUs to allocate for Ray.")
+
+    def to_hydra_conf(self):
+        return {
+            "num_cpus": self.num_cpus,
+        }
 
 class VerlConfig(BaseModel):
     actor_rollout_ref: ActorRolloutRefConfig = Field(default_factory=ActorRolloutRefConfig, description="Configuration for the actor, rollout, and reference models.")
     data: DataConfig = Field(default_factory=DataConfig, description="Configuration for the dataset.")
+    algorithm: AlgorithmConfig = Field(default_factory=AlgorithmConfig, description="Configuration for the RL algorithm.")
+    trainer: TrainerConfig = Field(default_factory=TrainerConfig, description="Configuration for the trainer.")
+    ray: RayConfig = Field(default_factory=RayConfig, description="Configuration for Ray.")
 
-    def to_hydra_conf(self):
+
+    def to_hydra_conf(self, trust_remote_code: bool = False):
         return {
-            "actor_rollout_ref": self.actor_rollout_ref.to_hydra_conf(),
-            "data": self.data.to_hydra_conf(),
+            "actor_rollout_ref": self.actor_rollout_ref.to_hydra_conf(trust_remote_code=trust_remote_code),
+            "data": self.data.to_hydra_conf(trust_remote_code=trust_remote_code),
             "critic": None,
+            "reward_model": None,
+            "algorithm": self.algorithm.to_hydra_conf(),
+            "trainer": self.trainer.to_hydra_conf(),
+            "ray": self.ray.to_hydra_conf(),
         }

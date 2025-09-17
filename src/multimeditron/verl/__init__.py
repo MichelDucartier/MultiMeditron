@@ -1,14 +1,20 @@
 import ray
 import random
-from multimeditron.cli.config import VerlConfig
-from pprint import pprint
+from multimeditron.cli.config import VerlConfig, AdvantageEstimationMode
+from omegaconf import OmegaConf
 
 @ray.remote(num_cpus=1)
 class TaskRunner:
-    def run(self, cfg: VerlConfig, trust_remote_code: bool = False):
+    def run(self,
+            cfg: VerlConfig,
+            trust_remote_code: bool = False,
+            verbose: bool = False):
         from transformers import AutoTokenizer
 
-        pprint(cfg.model_dump())
+        if verbose:
+            from pprint import pprint
+            pprint("Final Merged Configuration:")
+            pprint(cfg.to_hydra_conf())
 
         # Instantiate tokenizer
         print("Instantiating tokenizer...")
@@ -20,22 +26,12 @@ class TaskRunner:
         
         # For each strategy, we would have different training loops
         # assert cfg.actor_rollout_ref.model.strategy == cfg.critic.model.strategy, "Currently only support same strategy for actor and critic"
+        from verl.single_controller.ray import RayWorkerGroup
+        from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
 
-        match cfg.actor_rollout_ref.model.strategy:
-            case ModelStrategy.FSDP:
-                from verl.single_controller.ray import RayWorkerGroup
-                from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
+        ray_worker_group_cls = RayWorkerGroup
 
-                ray_worker_group_cls = RayWorkerGroup
-            case ModelStrategy.MEGATRON:
-                from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
-                from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
-
-                ray_worker_group_cls = NVMegatronRayWorkerGroup
-            case _:
-                print(f"Strategy {cfg.actor_rollout_ref.model.strategy} not implemented yet.")
-                raise NotImplementedError
-
+        # Setup Ray
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
         role_worker_mapping = {
@@ -73,25 +69,25 @@ class TaskRunner:
         
         # Reference model
         # if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
-        if cfg.algorithm.kl.use_in_reward:
+        if cfg.algorithm.use_kl_in_reward:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
         # reward_manager_name = config.reward_model.get("reward_manager", "naive")
-        match cfg.algorithm.reward_manager:
-            case RewardManager.NAIVE:
-                from verl.workers.reward_manager import NaiveRewardManager
-                reward_manager_cls = NaiveRewardManager
-            case RewardManager.PRIME:
-                from verl.workers.reward_manager import PrimeRewardManager
-                reward_manager_cls = PrimeRewardManager
-            case RewardManager.DAPO:
-                from verl.workers.reward_manager import DAPORewardManager
-                reward_manager_cls = DAPORewardManager
-            case RewardManager.ASYNC_DAPO:
-                raise NotImplementedError
-            case _:
-                raise NotImplementedError
+        # match cfg.algorithm.adv_estimator:
+        #     case AdvantageEstimationMode.NAIVE:
+        from verl.workers.reward_manager import NaiveRewardManager
+        reward_manager_cls = NaiveRewardManager
+        # case AdvantageEstimationMode.PRIME:
+        #     from verl.workers.reward_manager import PrimeRewardManager
+        #     reward_manager_cls = PrimeRewardManager
+        # case AdvantageEstimationMode.DAPO:
+        #     from verl.workers.reward_manager import DAPORewardManager
+        #     reward_manager_cls = DAPORewardManager
+        # case AdvantageEstimationMode.ASYNC_DAPO:
+        #     raise NotImplementedError
+        # case _:
+        #     raise NotImplementedError
 
         # compute_score = get_custom_reward_fn(config)
         reward_fn = reward_manager_cls(
@@ -115,17 +111,25 @@ class TaskRunner:
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+        
+        trainer_config = cfg.to_hydra_conf(trust_remote_code=trust_remote_code)
+        trainer_config = OmegaConf.create(trainer_config)
+        OmegaConf.resolve(trainer_config)
+        # trainer_config = OmegaConf.to_container(trainer_config, resolve=True)
+        # OmegaConf.resolve(trainer_config)
+        # print(trainer_config)
+        # return
+
         trainer = RayPPOTrainer(
-            config={
-            },
+            config=trainer_config,
             tokenizer=tokenizer,
             role_worker_mapping=role_worker_mapping,
             resource_pool_manager=resource_pool_manager,
             ray_worker_group_cls=ray_worker_group_cls,
             reward_fn=reward_fn,
             val_reward_fn=val_reward_fn,
-            train_dataset=...,
-            val_dataset=...,
+            train_dataset=cfg.data.train_files,
+            val_dataset=cfg.data.val_files,
             # collate_fn=...,
             train_sampler=None,
             # device_name="cuda",
