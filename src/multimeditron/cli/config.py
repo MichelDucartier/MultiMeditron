@@ -561,6 +561,44 @@ class AlgorithmConfig(BaseModel):
             }
         }
 
+class CriticConfig(BaseModel):
+    rollout_n: Annotated[int, Field(gt=0)] = Field(None, description="Number of responses to generate per prompt during rollout for training the critic.")
+    enable: bool = Field(False, description="Whether to enable the critic model.")
+    optim: OptimConfig = Field(default_factory=OptimConfig, description="Optimizer configuration for the critic.")
+    model: ModelConfig = Field(default_factory=ModelConfig, description="Configuration for loading the critic model from HuggingFace or local path.")
+
+    ppo_mini_batch_size: int = Field(256, description="Split each sample into sub-batches of this size for PPO training.")
+    use_dynamic_bsz: bool = Field(False, description="Whether to automatically adjust batch size based on GPU memory.")
+    ppo_max_token_len_per_gpu: Annotated[int, Field(gt=0)] = Field(16384, description="Maximum token length per GPU for PPO training of the critic model. Typically it should be: n * data.max_prompt_length + data.max_response_length.")
+    forward_max_token_len_per_gpu: Annotated[int, Field(gt=0)] = Field(16384, description="Maximum token length per GPU for the critic model. Typically it should be: n * data.max_prompt_length + data.max_response_length.")
+    ppo_epochs: Annotated[int, Field(gt=0)] = Field(1, description="Number of epochs to train the critic per batch.")
+    shuffle: bool = Field(False, description="Whether to shuffle training data across PPO epochs.")
+    cliprange_value: float = Field(0.5, description="Clipping range for value function in PPO.")
+    loss_agg_mode: LossAggregationMode = Field(LossAggregationMode.TOKEN_MEAN, description="Method to aggregate loss over tokens and sequences.")
+    checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig, description="Configuration for saving and loading checkpoints.")
+    profiler: ProfilerConfig = Field(default_factory=ProfilerConfig, description="Profiler configuration for the critic model.")
+
+    def to_hydra_conf(self):
+        return {
+            "_target_": "verl.workers.config.CriticConfig",
+            "rollout_n": self.rollout_n,
+            "enable": self.enable,
+            "ppo_mini_batch_size": self.ppo_mini_batch_size,
+            "ppo_micro_batch_size": None, # to be filled later
+            "ppo_micro_batch_size_per_gpu": None, # to be filled later
+            "use_dynamic_bsz": self.use_dynamic_bsz,
+            "ppo_max_token_len_per_gpu": self.ppo_max_token_len_per_gpu,
+            "forward_max_token_len_per_gpu": self.forward_max_token_len_per_gpu,
+            "ppo_epochs": self.ppo_epochs,
+            "shuffle": self.shuffle,
+            "cliprange_value": self.cliprange_value,
+            "loss_agg_mode": str(self.loss_agg_mode),
+            "model": self.model.to_hydra_conf(),
+            "checkpoint": self.checkpoint.to_hydra_conf(),
+            "optim": self.optim.to_hydra_conf(),
+            "profiler": self.profiler.to_hydra_conf(),
+        }
+
 class TrainerConfig(BaseModel):
     balance_batch: bool = Field(True, description="Whether to balance the batch size across GPUs.")
     total_epochs: int = Field(30, description="Total number of epochs to train.")
@@ -624,7 +662,7 @@ class TrainerConfig(BaseModel):
 
 class RayConfig(BaseModel):
     dashboard: Optional[str] = Field(None, description="Address of the Ray dashboard, e.g., 'localhost:8265'. If None, Ray dashboard is not used.")
-    num_cpus: Annotated[int, Field(gt=0)] = Field(4, description="Number of CPUs to allocate for Ray.")
+    num_cpus: Annotated[Optional[int], Field(gt=0)] = Field(4, description="Number of CPUs to allocate for Ray.")
 
     def to_hydra_conf(self):
         return {
@@ -637,13 +675,19 @@ class VerlConfig(BaseModel):
     algorithm: AlgorithmConfig = Field(default_factory=AlgorithmConfig, description="Configuration for the RL algorithm.")
     trainer: TrainerConfig = Field(default_factory=TrainerConfig, description="Configuration for the trainer.")
     ray: RayConfig = Field(default_factory=RayConfig, description="Configuration for Ray.")
+    critic: CriticConfig = Field(default_factory=CriticConfig, description="Configuration for the critic model.")
 
+    def update(self):
+        if self.critic.rollout_n is None:
+            self.critic.rollout_n = self.actor_rollout_ref.rollout.n
 
     def to_hydra_conf(self, trust_remote_code: bool = False):
+        self.update()
+
         return {
             "actor_rollout_ref": self.actor_rollout_ref.to_hydra_conf(trust_remote_code=trust_remote_code),
             "data": self.data.to_hydra_conf(trust_remote_code=trust_remote_code),
-            "critic": None,
+            "critic": self.critic.to_hydra_conf(),
             "reward_model": None,
             "algorithm": self.algorithm.to_hydra_conf(),
             "trainer": self.trainer.to_hydra_conf(),

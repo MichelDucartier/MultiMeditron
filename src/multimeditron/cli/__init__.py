@@ -2,8 +2,8 @@ from .config import VerlConfig
 from .utils import split_host_port
 
 import click
-import hydra
-import random
+import torch
+import torch.multiprocessing as mp
 import yaml
 import ray
 import logging
@@ -46,10 +46,73 @@ def config_verl_generate(output):
         print(yaml.dump(cfg.model_dump()))
 
 @main_cli.command(epilog=EPILOG)
+@click.argument("dataset", type=click.Path(exists=True))
+@click.argument("output", type=click.Path())
+@click.argument("model", type=str)
+@click.option("--attachment-token", "-a", type=str, default="<|reserved_special_token_0|>", help="Special token to represent attachments in the text.")
+@click.option("--registry-type", "-r", type=click.Choice(["path", "hdf5", "wids"]), default="path", help="Type of the dataset registry to use.")
+@click.option("--num-processes", "-n", type=int, default=32, help="Number of processes to use for tokenization.")
+def preprocess_ds(dataset,
+                  output,
+                  model, 
+                  attachment_token,
+                  registry_type, 
+                  num_processes):
+    """
+    Preprocess and tokenize the dataset for training.
+    """
+    torch.set_num_threads(1)
+    mp.set_sharing_strategy("file_system")
+    mp.set_start_method("spawn", force=True)
+
+    # Disable randomness
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # Create the base mode with fast tokenizer
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        model, dtype=torch.bfloat16, use_fast=True)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    special_tokens = {'additional_special_tokens': [attachment_token]}
+    tokenizer.add_special_tokens(special_tokens)
+
+    # Create a model
+    torch.set_default_dtype(torch.bfloat16)
+
+    # Load the configuration
+    print("Saving dataset to", output)
+    from multimeditron.dataset.registry.registry import get_registry
+    from multimeditron.model.jsonl_generator import JSONLGenerator
+    from multimeditron.dataset.preprocessor.modality_preprocessor import ModalityRetriever
+    from datasets import Dataset
+
+    registry_builder = get_registry(registry_type)
+
+    base_path = os.path.dirname(dataset)
+    with registry_builder(base_path=base_path) as registry:
+        ds = JSONLGenerator(dataset)
+        ds = Dataset.from_generator(lambda: ds)
+
+        processor_wrapper = ModalityRetriever(registry)
+
+        ds = ds.map(
+            processor_wrapper.merge_modality_with_sample,
+            batched=False,
+            writer_batch_size=num_processes,
+            num_proc=num_processes)
+        ds.to_parquet(
+            output
+        )
+
+@main_cli.command(epilog=EPILOG)
 @click.option("--config", "-c", type=click.Path(exists=True), multiple=True, help="Path to the configuration file(s) in YAML format.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
+@click.option("--debug/--no-debug", default=False, help="Enable debug mode.")
 @click.option("--trust-remote-code/--no-trust-remote-code", default=False, help="Whether to trust remote code when loading models from HuggingFace.")
-def train_verl(config: tuple[str] = [], trust_remote_code: bool = False, verbose: bool = False):
+def train_verl(config: tuple[str] = [], trust_remote_code: bool = False, verbose: bool = False, debug: bool = False):
     """
     Train the MultiMeditron model using the specified configuration file.
     """
@@ -71,7 +134,27 @@ def train_verl(config: tuple[str] = [], trust_remote_code: bool = False, verbose
     # isolation, will solve in the future
     os.environ["ENSURE_CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     if not ray.is_initialized():
-        kwargs = {}
+        kwargs = {
+            "runtime_env": {
+                "env_vars": {
+                    "TOKENIZERS_PARALLELISM": "true",
+                    "NCCL_DEBUG": "INFO" if debug else "WARN",
+                    "VLLM_LOGGING_LEVEL": "INFO" if debug else "ERROR",
+                },
+            },
+        }
+
+        if cfg.ray.num_cpus is not None:
+            kwargs["num_cpus"] = cfg.ray.num_cpus
+
+        if debug:
+            logger.info("Ray debug mode is enabled.")
+            kwargs["runtime_env"]["env_vars"]["RAY_DEBUG"] = "1"
+            kwargs["runtime_env"]["env_vars"]["RAY_DEBUG_POST_MORTEM"] = "1"
+        else:
+            logger.info("Ray debug mode is disabled.")
+            kwargs["runtime_env"]["env_vars"]["RAY_DEBUG"] = "0"
+
         if cfg.ray.dashboard is not None:
             host, port = split_host_port(cfg.ray.dashboard, default_port=8265)
             kwargs["dashboard_host"] = host
@@ -80,15 +163,8 @@ def train_verl(config: tuple[str] = [], trust_remote_code: bool = False, verbose
         else:
             kwargs["include_dashboard"] = False
 
+
         ray.init(
-            runtime_env={
-                "env_vars": {
-                    "TOKENIZERS_PARALLELISM": "true",
-                    "NCCL_DEBUG": "WARN",
-                    "VLLM_LOGGING_LEVEL": "WARN"
-                },
-            },
-            num_cpus=cfg.ray.num_cpus,
             **kwargs
         )
     else:

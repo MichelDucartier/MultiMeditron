@@ -128,14 +128,19 @@ class TaskRunner:
             ray_worker_group_cls=ray_worker_group_cls,
             reward_fn=reward_fn,
             val_reward_fn=val_reward_fn,
-            train_dataset=cfg.data.train_files,
-            val_dataset=cfg.data.val_files,
+            collate_fn=None,
+            # train_dataset=cfg.data.train_files,
+            # val_dataset=cfg.data.val_files,
+            # val_dataset=None,
             # collate_fn=...,
-            train_sampler=None,
+            # train_sampler=None,
             # device_name="cuda",
         )
         trainer.init_workers()
         trainer.fit()
+    
+def collate_fn(x): 
+    return x
 
 def compute_score(data_source, solution_str, ground_truth, extra_info):
     if extra_info is None or "question" not in extra_info or "url" not in extra_info:
