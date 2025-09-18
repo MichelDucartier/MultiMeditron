@@ -12,12 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 @main_cli.command(epilog=EPILOG)
+@click.option("--input", "-i", type=click.Path(exists=True), default=None, help="Path to load an existing configuration file to modify.")
 @click.option("--output", "-o", type=click.Path(), default=None, help="Path to save the generated configuration file.")
-def config_verl_generate(output):
+def config_verl_generate(input, output):
     """
     Generate a default configuration file for training the MultiMeditron model.
     """
-    cfg = VerlConfig()
+    if input is not None:
+        with open(input, "r") as f:
+            file_cfg = yaml.safe_load(f)
+        cfg = VerlConfig.model_validate(file_cfg, strict=True)
+    else:
+        cfg = VerlConfig()
+
     if output is not None:
         with open(output, "w") as f:
             yaml.dump(cfg.model_dump(), f)

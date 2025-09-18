@@ -3,7 +3,10 @@ actor_rollout_ref:
     checkpoint:
       async_save: false
       load_contents: null
-      save_contents: [model, optimizer, extra]
+      save_contents:
+      - model
+      - optimizer
+      - extra
     clip_ratio: 0.2
     clip_ratio_c: 3.0
     clip_ratio_high: 0.2
@@ -30,8 +33,8 @@ actor_rollout_ref:
     loss_agg_mode: token-mean
     optim:
       betas:
-        - 0.9
-        - 0.999
+      - 0.9
+      - 0.999
       clip_grad: null
       lr: 1.0e-05
       lr_warmup_steps_ratio: 0.0
@@ -65,14 +68,16 @@ actor_rollout_ref:
       torch_step_end: null
       torch_step_start: 0
     shufle: false
-    tis_imp_ratio_cap: -1
+    tis_imp_ratio_cap: -1.0
     use_dynamic_bsz: false
     use_fused_kernels: true
     use_kl_loss: false
     use_torch_compile: true
+  hybrid_engine: true
   model:
     path: meta-llama/Llama-3.1-8B-Instruct
     use_shm: false
+  nccl_timeout: 600
   rollout:
     do_sample: true
     dtype: bfloat16
@@ -83,6 +88,7 @@ actor_rollout_ref:
     free_cache_engine: true
     gpu_memory_utilization: 0.5
     ignore_eos: false
+    layered_summon: false
     load_format: hf
     max_model_len: null
     max_num_batched_tokens: 8192
@@ -125,6 +131,53 @@ algorithm:
   kl_penalty: kl
   lam: 1.0
   use_kl_in_reward: false
+critic:
+  checkpoint:
+    async_save: false
+    load_contents: null
+    save_contents:
+    - model
+    - optimizer
+    - extra
+  cliprange_value: 0.5
+  enable: false
+  forward_max_token_len_per_gpu: 16384
+  loss_agg_mode: token-mean
+  model:
+    path: ???
+    use_shm: false
+  optim:
+    betas:
+    - 0.9
+    - 0.999
+    clip_grad: null
+    lr: 1.0e-05
+    lr_warmup_steps_ratio: 0.0
+    min_lr_ratio: 0.0
+    num_cycles: 0.5
+    warmup_style: constant
+    weight_decay: 0.01
+  ppo_epochs: 1
+  ppo_max_token_len_per_gpu: 16384
+  ppo_mini_batch_size: 256
+  profiler:
+    all_ranks: false
+    enable: false
+    npu_analysis: true
+    npu_contents: []
+    npu_discrete: true
+    npu_level: null
+    nsys_discrete: true
+    ranks: []
+    save_path: null
+    tool: null
+    torch_memory_stack_depth: 32
+    torch_memory_trace_alloc_max_entries: 1000000
+    torch_step_end: null
+    torch_step_start: 0
+  rollout_n: null
+  shuffle: false
+  use_dynamic_bsz: false
 data:
   dataloader_num_workers: 1
   filter_overlong_prompts: false
@@ -137,15 +190,32 @@ data:
   tokenizer: null
   train_batch_size: 8
   train_files:
-    - ./mock_dataset/mock_dataset.parquet
+  - ./mock_dataset/mock_dataset.parquet
   truncation: error
   use_shm: false
   val_batch_size: 8
   val_files:
-    - ./mock_dataset/mock_dataset.parquet
-  # val_files: null
+  - ./mock_dataset/mock_dataset.parquet
   validation_shuffle: false
   video_key: videos
+global_profiler:
+  all_ranks: false
+  enable: false
+  npu_analysis: true
+  npu_contents: []
+  npu_discrete: true
+  npu_level: null
+  nsys_discrete: true
+  ranks: []
+  save_path: null
+  tool: null
+  torch_memory_stack_depth: 32
+  torch_memory_trace_alloc_max_entries: 1000000
+  torch_step_end: null
+  torch_step_start: 0
+ray:
+  dashboard: localhost:8265
+  num_cpus: null
 trainer:
   balance_batch: true
   critic_warmup: 0
@@ -157,8 +227,8 @@ trainer:
   experiment_name: debug
   log_val_generations: 0
   logger:
-    - console
-    - wandb
+  - console
+  - wandb
   max_actor_ckpt_to_keep: null
   max_critic_ckpt_to_keep: null
   n_gpus_per_node: 1
@@ -176,6 +246,3 @@ trainer:
   val_before_train: true
   val_only: false
   validation_data_dir: null
-ray:
-  dashboard: localhost:8265
-  num_cpus: null
