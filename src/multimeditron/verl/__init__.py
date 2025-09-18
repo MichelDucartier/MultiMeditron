@@ -120,6 +120,7 @@ class TaskRunner:
         # print(trainer_config)
         # return
 
+        breakpoint()
         trainer = RayPPOTrainer(
             config=trainer_config,
             tokenizer=tokenizer,

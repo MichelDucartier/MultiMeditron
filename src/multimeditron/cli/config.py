@@ -240,7 +240,7 @@ class ActorConfig(BaseModel):
     policy_loss: PolicyLossConfig = Field(default_factory=PolicyLossConfig, description="Configuration for policy loss.")
     profiler: ProfilerConfig = Field(default_factory=ProfilerConfig, description="Profiler configuration for the actor.")
     
-    ppo_mini_batch_size: Annotated[int, Field(gt=0)] = Field(256, description="Split each sample into sub-batches of this size for PPO training.")
+    ppo_mini_batch_size: Annotated[int, Field(gt=0)] = Field(16, description="Split each sample into sub-batches of this size for PPO training.")
     use_dynamic_bsz: bool = Field(False, description="Whether to automatically adjust batch size based on GPU memory.")
     ppo_max_token_len_per_gpu: Annotated[int, Field(gt=0)] = Field(16384, description="Maximum token length per GPU for PPO training. Typically it should be: n * data.max_prompt_length + data.max_response_length.")
     clip_ratio: float = Field(0.2, description="Clipping ratio for PPO.")
@@ -425,7 +425,7 @@ class DataConfig(BaseModel):
     train_files: Union[List[str], str] = Field(None, description="Training set parquet. Can be a list of a single file. Read everything in memory, cannot be too large.")
     val_files: Optional[Union[List[str], str]] = Field(None, description="Validation set parquet. Can be a list of a single file. Read everything in memory, cannot be too large.")
     reward_fn_key: str = Field("data_source", description="The field used to select the reward function (if using different ones per example).")
-    train_batch_size: Annotated[int, Field(gt=0)] = Field(1024, description="Batch size for one iteration of different RL algorithms.")
+    train_batch_size: Annotated[int, Field(gt=0)] = Field(32, description="Batch size for one iteration of different RL algorithms.")
     val_batch_size: Optional[Annotated[int, Field(gt=0)]] = Field(None, description="Batch size for validation")
 
     shuffle: bool = Field(True, description="Whether to shuffle the training data.")
@@ -622,7 +622,7 @@ class TrainerConfig(BaseModel):
     critic_warmup: int = Field(0, description="Number of epochs to warm up the critic before training the actor. 0 to disable.")
     default_hdfs_dir: Optional[str] = Field(None, description="Default HDFS path to distributed fs for saving checkpoints")
     del_local_ckpt_after_load: bool = Field(False, description="Whether to delete local checkpoint files after uploading to HDFS.")
-    default_local_dir: str = Field("checkpoints/${trainer.project_name}/${trainer.experiment_name}", description="Default local path to save checkpoints")
+    default_local_dir: str = Field("checkpoints/verl/", description="Default local path to save checkpoints")
     max_actor_ckpt_to_keep: Optional[int] = Field(None, description="Maximum number of actor checkpoints to keep.")
     max_critic_ckpt_to_keep: Optional[int] = Field(None, description="Maximum number of critic checkpoints to keep.")
     ray_wait_register_center_timeout: int = Field(300, description="Timeout (in seconds) for Ray workers to wait for registration")
@@ -632,8 +632,8 @@ class TrainerConfig(BaseModel):
     def to_hydra_conf(self):
         return {
             "balance_batch": self.balance_batch,
-            "max_epochs": self.total_epochs,
-            "max_training_steps": self.total_training_steps,
+            "total_epochs": self.total_epochs,
+            "total_training_steps": self.total_training_steps,
             "project_name": self.project_name,
             "experiment_name": self.experiment_name,
             "logger": self.logger,
@@ -676,8 +676,12 @@ class VerlConfig(BaseModel):
     trainer: TrainerConfig = Field(default_factory=TrainerConfig, description="Configuration for the trainer.")
     ray: RayConfig = Field(default_factory=RayConfig, description="Configuration for Ray.")
     critic: CriticConfig = Field(default_factory=CriticConfig, description="Configuration for the critic model.")
+    global_profiler: ProfilerConfig = Field(default_factory=ProfilerConfig, description="Global profiler configuration.")
 
     def update(self):
+        if self.data.tokenizer is None:
+            self.data.tokenizer = self.actor_rollout_ref.model.path
+
         if self.critic.rollout_n is None:
             self.critic.rollout_n = self.actor_rollout_ref.rollout.n
 
@@ -688,6 +692,7 @@ class VerlConfig(BaseModel):
             "actor_rollout_ref": self.actor_rollout_ref.to_hydra_conf(trust_remote_code=trust_remote_code),
             "data": self.data.to_hydra_conf(trust_remote_code=trust_remote_code),
             "critic": self.critic.to_hydra_conf(),
+            "global_profiler": self.global_profiler.to_hydra_conf(),
             "reward_model": None,
             "algorithm": self.algorithm.to_hydra_conf(),
             "trainer": self.trainer.to_hydra_conf(),

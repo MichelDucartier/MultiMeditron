@@ -126,21 +126,21 @@ algorithm:
   lam: 1.0
   use_kl_in_reward: false
 data:
-  dataloader_num_workers: 2
+  dataloader_num_workers: 1
   filter_overlong_prompts: false
   image_key: images
   max_prompt_length: 512
   max_response_length: 1024
-  prompt_key: conversations
+  prompt_key: prompt
   reward_fn_key: data_source
   shuffle: true
   tokenizer: null
-  train_batch_size: 1024
+  train_batch_size: 8
   train_files:
     - ./mock_dataset/mock_dataset.parquet
   truncation: error
   use_shm: false
-  val_batch_size: 1024
+  val_batch_size: 8
   val_files:
     - ./mock_dataset/mock_dataset.parquet
   # val_files: null
