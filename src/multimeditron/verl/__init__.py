@@ -1,20 +1,20 @@
 import ray
 import random
-from multimeditron.cli.config import VerlConfig, AdvantageEstimationMode
 from omegaconf import OmegaConf
 
 @ray.remote(num_cpus=1)
 class TaskRunner:
     def run(self,
-            cfg: VerlConfig,
+            cfg,
             trust_remote_code: bool = False,
-            verbose: bool = False):
+            verbose: bool = False,
+            dryrun: bool = False):
         from transformers import AutoTokenizer
 
         if verbose:
             from pprint import pprint
             pprint("Final Merged Configuration:")
-            pprint(cfg.to_hydra_conf())
+            pprint(cfg.model_dump())
 
         # Instantiate tokenizer
         print("Instantiating tokenizer...")
@@ -41,7 +41,7 @@ class TaskRunner:
         }
         global_pool_id = "global_pool"
         resource_pool_spec = {
-            global_pool_id: [cfg.trainer.n_gpus_per_node] * cfg.trainer.n_nodes,
+            global_pool_id: [cfg.trainer.n_gpus_per_node] * cfg.trainer.nnodes,
         }
         mapping = {
             Role.ActorRollout: global_pool_id,
@@ -73,30 +73,38 @@ class TaskRunner:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
-        # reward_manager_name = config.reward_model.get("reward_manager", "naive")
-        # match cfg.algorithm.adv_estimator:
-        #     case AdvantageEstimationMode.NAIVE:
-        from verl.workers.reward_manager import NaiveRewardManager
-        reward_manager_cls = NaiveRewardManager
-        # case AdvantageEstimationMode.PRIME:
-        #     from verl.workers.reward_manager import PrimeRewardManager
-        #     reward_manager_cls = PrimeRewardManager
-        # case AdvantageEstimationMode.DAPO:
-        #     from verl.workers.reward_manager import DAPORewardManager
-        #     reward_manager_cls = DAPORewardManager
-        # case AdvantageEstimationMode.ASYNC_DAPO:
-        #     raise NotImplementedError
-        # case _:
-        #     raise NotImplementedError
+        reward_manager_name = cfg.reward_model.get("reward_manager", "naive")
+        match reward_manager_name:
+            case 'batch':
+                from verl.workers.reward_manager import BatchRewardManager
+                reward_manager_cls = BatchRewardManager
+
+            case 'naive':
+                from verl.workers.reward_manager import NaiveRewardManager
+                reward_manager_cls = NaiveRewardManager
+            
+            case 'prime':
+                from verl.workers.reward_manager import PrimeRewardManager
+                reward_manager_cls = PrimeRewardManager
+
+            case 'dapo':
+                from verl.workers.reward_manager import DAPORewardManager
+                reward_manager_cls = DAPORewardManager
+
+            case 'async_dapo':
+                raise NotImplementedError
+            
+            case _:
+                raise NotImplementedError(f"Reward manager {reward_manager_name} not implemented")
 
         # compute_score = get_custom_reward_fn(config)
         reward_fn = reward_manager_cls(
             tokenizer=tokenizer,
             num_examine=0,
             compute_score=compute_score,
-            # reward_fn_key=cfg.data.reward_fn_key,
-            # max_resp_len=cfg.actor_rollout_ref.max_token,
-            # overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            reward_fn_key=cfg.data.reward_fn_key,
+            max_resp_len=cfg.actor_rollout_ref.rollout.response_length,
+            overlong_buffer_cfg=cfg.reward_model.overlong_buffer,
         )
 
         # Note that we always use function-based RM for validation
@@ -104,17 +112,16 @@ class TaskRunner:
             tokenizer=tokenizer,
             num_examine=1,
             compute_score=compute_score,
-            # reward_fn_key=config.data.reward_fn_key,
-            # max_resp_len=cfg.actor_rollout_ref.max_token,
-            # overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            reward_fn_key=cfg.data.reward_fn_key,
+            max_resp_len=cfg.actor_rollout_ref.rollout.response_length,
+            overlong_buffer_cfg=cfg.reward_model.overlong_buffer,
         )
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         from verl.trainer.ppo.ray_trainer import RayPPOTrainer
         
-        trainer_config = cfg.to_hydra_conf(trust_remote_code=trust_remote_code)
-        trainer_config = OmegaConf.create(trainer_config)
-        OmegaConf.resolve(trainer_config)
+        cfg = OmegaConf.create(cfg)
+        OmegaConf.resolve(cfg)
         # trainer_config = OmegaConf.to_container(trainer_config, resolve=True)
         # OmegaConf.resolve(trainer_config)
         # print(trainer_config)
@@ -122,7 +129,7 @@ class TaskRunner:
 
         breakpoint()
         trainer = RayPPOTrainer(
-            config=trainer_config,
+            config=cfg,
             tokenizer=tokenizer,
             role_worker_mapping=role_worker_mapping,
             resource_pool_manager=resource_pool_manager,
@@ -130,15 +137,13 @@ class TaskRunner:
             reward_fn=reward_fn,
             val_reward_fn=val_reward_fn,
             collate_fn=None,
-            # train_dataset=cfg.data.train_files,
-            # val_dataset=cfg.data.val_files,
-            # val_dataset=None,
-            # collate_fn=...,
-            # train_sampler=None,
-            # device_name="cuda",
         )
         trainer.init_workers()
-        trainer.fit()
+
+        if not dryrun:
+            trainer.fit()
+        else:
+            print("Dry run complete. Exiting without training.")
     
 def collate_fn(x): 
     return x

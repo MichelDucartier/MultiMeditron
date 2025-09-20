@@ -1,8 +1,10 @@
 import click
+import os
 import logging
 
 logger = logging.getLogger(__name__)
 
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config"))
 EPILOG = """
 This tools is part of the MultiMeditron project,
 made by the LiGHT group at EPFL."""
@@ -21,4 +23,4 @@ def main_cli():
     )
 
 from .preprocess import *
-from .train import *
+from .verl import *
