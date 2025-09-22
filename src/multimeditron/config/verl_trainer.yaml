@@ -54,13 +54,18 @@ actor_rollout_ref:
     n: 1
     load_format: hf
     dtype: bfloat16
-    # name: hf
+    name: hf
   actor:
+    fsdp_config:
+      model_dtype: bfloat16
     ppo_mini_batch_size: 256
     # ppo_micro_batch_size: null
     ppo_micro_batch_size_per_gpu: 4 
     use_dynamic_bsz: false
     ppo_max_token_len_per_gpu: 16384
+  ref:
+    fsdp_config:
+      model_dtype: bfloat16
 
 
 global_profiler:
