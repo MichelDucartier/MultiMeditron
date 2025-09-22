@@ -9,7 +9,6 @@ import ray
 
 logger = logging.getLogger(__name__)
 
-
 @main_cli.command(epilog=EPILOG, context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
 @click.option("--config", "-c", type=click.Path(exists=True), help="Path to the configuration file(s) in YAML format.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
