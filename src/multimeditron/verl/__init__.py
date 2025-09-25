@@ -1,14 +1,20 @@
 import ray
 import random
-from multimeditron.cli.config import VerlTrainConfig, ModelStrategy, RewardManager
-from pprint import pprint
+from omegaconf import OmegaConf
 
 @ray.remote(num_cpus=1)
 class TaskRunner:
-    def run(self, cfg: VerlTrainConfig, trust_remote_code: bool = False):
+    def run(self,
+            cfg,
+            trust_remote_code: bool = False,
+            verbose: bool = False,
+            dryrun: bool = False):
         from transformers import AutoTokenizer
 
-        pprint(cfg.model_dump())
+        if verbose:
+            from pprint import pprint
+            pprint("Final Merged Configuration:")
+            pprint(cfg.model_dump())
 
         # Instantiate tokenizer
         print("Instantiating tokenizer...")
@@ -20,22 +26,12 @@ class TaskRunner:
         
         # For each strategy, we would have different training loops
         # assert cfg.actor_rollout_ref.model.strategy == cfg.critic.model.strategy, "Currently only support same strategy for actor and critic"
+        from verl.single_controller.ray import RayWorkerGroup
+        from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
 
-        match cfg.actor_rollout_ref.model.strategy:
-            case ModelStrategy.FSDP:
-                from verl.single_controller.ray import RayWorkerGroup
-                from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
+        ray_worker_group_cls = RayWorkerGroup
 
-                ray_worker_group_cls = RayWorkerGroup
-            case ModelStrategy.MEGATRON:
-                from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
-                from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
-
-                ray_worker_group_cls = NVMegatronRayWorkerGroup
-            case _:
-                print(f"Strategy {cfg.actor_rollout_ref.model.strategy} not implemented yet.")
-                raise NotImplementedError
-
+        # Setup Ray
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
         role_worker_mapping = {
@@ -45,7 +41,7 @@ class TaskRunner:
         }
         global_pool_id = "global_pool"
         resource_pool_spec = {
-            global_pool_id: [cfg.trainer.n_gpus_per_node] * cfg.trainer.n_nodes,
+            global_pool_id: [cfg.trainer.n_gpus_per_node] * cfg.trainer.nnodes,
         }
         mapping = {
             Role.ActorRollout: global_pool_id,
@@ -73,34 +69,42 @@ class TaskRunner:
         
         # Reference model
         # if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
-        if cfg.algorithm.kl.use_in_reward:
+        if cfg.algorithm.use_kl_in_reward:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
-        # reward_manager_name = config.reward_model.get("reward_manager", "naive")
-        match cfg.algorithm.reward_manager:
-            case RewardManager.NAIVE:
+        reward_manager_name = cfg.reward_model.get("reward_manager", "naive")
+        match reward_manager_name:
+            case 'batch':
+                from verl.workers.reward_manager import BatchRewardManager
+                reward_manager_cls = BatchRewardManager
+
+            case 'naive':
                 from verl.workers.reward_manager import NaiveRewardManager
                 reward_manager_cls = NaiveRewardManager
-            case RewardManager.PRIME:
+            
+            case 'prime':
                 from verl.workers.reward_manager import PrimeRewardManager
                 reward_manager_cls = PrimeRewardManager
-            case RewardManager.DAPO:
+
+            case 'dapo':
                 from verl.workers.reward_manager import DAPORewardManager
                 reward_manager_cls = DAPORewardManager
-            case RewardManager.ASYNC_DAPO:
+
+            case 'async_dapo':
                 raise NotImplementedError
+            
             case _:
-                raise NotImplementedError
+                raise NotImplementedError(f"Reward manager {reward_manager_name} not implemented")
 
         # compute_score = get_custom_reward_fn(config)
         reward_fn = reward_manager_cls(
             tokenizer=tokenizer,
             num_examine=0,
             compute_score=compute_score,
-            # reward_fn_key=cfg.data.reward_fn_key,
-            # max_resp_len=cfg.actor_rollout_ref.max_token,
-            # overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            reward_fn_key=cfg.data.reward_fn_key,
+            max_resp_len=cfg.actor_rollout_ref.rollout.response_length,
+            overlong_buffer_cfg=cfg.reward_model.overlong_buffer,
         )
 
         # Note that we always use function-based RM for validation
@@ -108,30 +112,41 @@ class TaskRunner:
             tokenizer=tokenizer,
             num_examine=1,
             compute_score=compute_score,
-            # reward_fn_key=config.data.reward_fn_key,
-            # max_resp_len=cfg.actor_rollout_ref.max_token,
-            # overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            reward_fn_key=cfg.data.reward_fn_key,
+            max_resp_len=cfg.actor_rollout_ref.rollout.response_length,
+            overlong_buffer_cfg=cfg.reward_model.overlong_buffer,
         )
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+        
+        cfg = OmegaConf.create(cfg)
+        OmegaConf.resolve(cfg)
+        # trainer_config = OmegaConf.to_container(trainer_config, resolve=True)
+        # OmegaConf.resolve(trainer_config)
+        # print(trainer_config)
+        # return
+
+        breakpoint()
         trainer = RayPPOTrainer(
-            config={
-            },
+            config=cfg,
             tokenizer=tokenizer,
             role_worker_mapping=role_worker_mapping,
             resource_pool_manager=resource_pool_manager,
             ray_worker_group_cls=ray_worker_group_cls,
             reward_fn=reward_fn,
             val_reward_fn=val_reward_fn,
-            train_dataset=...,
-            val_dataset=...,
-            # collate_fn=...,
-            train_sampler=None,
-            # device_name="cuda",
+            collate_fn=None,
         )
         trainer.init_workers()
-        trainer.fit()
+
+        if not dryrun:
+            trainer.fit()
+        else:
+            print("Dry run complete. Exiting without training.")
+    
+def collate_fn(x): 
+    return x
 
 def compute_score(data_source, solution_str, ground_truth, extra_info):
     if extra_info is None or "question" not in extra_info or "url" not in extra_info:

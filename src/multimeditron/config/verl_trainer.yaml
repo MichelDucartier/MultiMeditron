@@ -1,0 +1,81 @@
+hydra:
+  searchpath: 
+    - pkg://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  max_prompt_length: 512
+  trust_remote_code: ${trust_remote_code}
+  max_response_length: 1024
+  train_batch_size: 8
+  val_batch_size: 8
+  train_files:
+    - ./mock_dataset/mock_dataset.parquet
+  val_files:
+    - ./mock_dataset/mock_dataset.parquet
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 4
+  project_name: verl-test
+  experiment_name: v01
+  logger: [console]
+
+critic:
+  enable: false
+  model:
+    trust_remote_code: ${trust_remote_code}
+
+
+reward_model:
+  enable: false
+  model:
+    trust_remote_code: ${trust_remote_code}
+  # Which reward manager to use. Currently supported values: 'batch', 'naive', 'prime', 'dapo', 'async_dapo'
+  reward_manager: dapo
+  overlong_buffer: 
+    enable: False # We try to avoid forgetting to set enable
+    len: 0
+    penalty_factor: 0.0
+    log: False
+
+actor_rollout_ref:
+  model:
+    path: meta-llama/Llama-3.1-8B-Instruct
+    use_shm: false
+    trust_remote_code: ${trust_remote_code}
+  rollout:
+    max_model_len: null
+    max_num_batched_tokens: 8192
+    max_num_seqs: 1024
+    n: 1
+    load_format: hf
+    dtype: bfloat16
+    name: hf
+  actor:
+    fsdp_config:
+      model_dtype: bfloat16
+    ppo_mini_batch_size: 256
+    # ppo_micro_batch_size: null
+    ppo_micro_batch_size_per_gpu: 4 
+    use_dynamic_bsz: false
+    ppo_max_token_len_per_gpu: 16384
+  ref:
+    fsdp_config:
+      model_dtype: bfloat16
+
+
+global_profiler:
+  enable: false
+  tool: null
+
+ray:
+  dashboard: 0.0.0.0:8265
+  # num_cpus: 16
+  num_cpus: null # Do not set when running the server
+
+# Global setting for trusting remote code when loading models
+trust_remote_code: false

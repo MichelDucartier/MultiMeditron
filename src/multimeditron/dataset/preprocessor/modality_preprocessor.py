@@ -61,6 +61,10 @@ class ModalityRetriever:
         self.registry = registry
 
     def merge_modality_with_sample(self, sample: Dict[str, Any]):
+        if MODALITIES_KEY not in sample:
+            return sample
+
+        # Processed sample
         processed_sample = sample.copy()
 
         # Add additional kwargs to modalities

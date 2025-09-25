@@ -171,7 +171,6 @@ modalities:
     config: # (Dict[str, str]) Configuration passed to the modality
 
 training_mode: # (str) Either ALIGNMENT, END2END or FULL. If ALIGNMENT, this will train the projection layer while freezing every other weights. If END2END, this will train the LLM+Projection while freezing every other weights. If FULL, this will train all the model at the same time
-data_loading_mode: TOKENIZED  # TOKENIZED or RAW. If PREPACKED, the dataset will be loaded from the packed dataset. If RAW, the dataset will be loaded from the raw dataset. The packing is done using the pack_dataset.py script.
 
 datasets: # List of datasets to use for finetuning. Each dataset must follow the format described in the README.md
   - packed_path: # (str) Path to the 1st dataset
