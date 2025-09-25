@@ -107,7 +107,8 @@ RUN {   echo "fpath+=${PURE_PATH}"; \
 RUN pip install --upgrade pip && pip install -U   \
       ninja accelerate datasets "transformers==4.56.2" \
       codetiming dill hydra-core pandas wandb     \
-      "pyarrow>=15.0.0" pybind11 pylatexenc
+      "pyarrow>=15.0.0" pybind11 pylatexenc       \
+      pybase64
 
 # This variable has been found through trial and errors, increase at you
 # own risk. In case of an emergency exists are located at the front and back of
