@@ -104,31 +104,35 @@ RUN {   echo "fpath+=${PURE_PATH}"; \
     } >> /etc/zsh/zshrc
 
 # Installing required dependencies
-RUN pip install --upgrade pip && pip install -U   \
+RUN pip3 install --upgrade pip && pip3 install -U \
       ninja accelerate datasets "transformers==4.56.2" \
-      codetiming dill hydra-core pandas wandb     \
-      "pyarrow>=15.0.0" pybind11 pylatexenc       \
-      pybase64
+      codetiming dill hydra-core pandas wandb      \
+      "pyarrow>=15.0.0" pybind11 pylatexenc        \
+      pybase64 mooncake-transfer-engine zmq        \
+      uvloop fastapi openai partial_json_parser    \
+      sentencepiece compressed_tensors msgspec     \
+      nest_asyncio torchao xgrammar
 
 # This variable has been found through trial and errors, increase at you
 # own risk. In case of an emergency exists are located at the front and back of
 # the airplane.
 ENV MAX_JOBS=8
-RUN pip install --upgrade pip && pip install -U --no-build-isolation --use-pep517 \
+RUN pip3 install --upgrade pip && pip3 install -U --no-build-isolation --use-pep517 \
         "flash-attn==2.8.3"
-RUN pip install --upgrade pip && pip install -U \
+RUN pip3 install --upgrade pip && pip3 install -U \
         nvidia-ml-py flashinfer-python
-RUN pip install --upgrade pip && pip install -v -U --no-build-isolation \
-        "sglang[test]==0.5.2"
-
+RUN pip3 install --upgrade pip && pip3 install -v -U --no-build-isolation \
+        "sglang[test]==0.5.2" sgl_kernel
+RUN pip3 uninstall -y pynvml
 
 # Add code tunnel for remote code development directly on the docker image
-RUN mkdir -p /workspace/code
-WORKDIR /workspace/code
-RUN curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-arm64' --output vscode_cli.tar.gz
-RUN tar -xf vscode_cli.tar.gz
-RUN mv ./code /usr/bin
-RUN rm -rf /workspace/code
+RUN mkdir -p /tmp/code
+WORKDIR /tmp/code
+RUN curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-arm64' --output vscode_cli.tar.gz && \
+    tar -xf vscode_cli.tar.gz && \
+    mv ./code /usr/bin
+WORKDIR /
+RUN rm -rf /tmp/code
 
 # Entrypoint command (zsh)
 CMD ["/bin/zsh"]
