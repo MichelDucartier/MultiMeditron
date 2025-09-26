@@ -111,7 +111,9 @@ RUN pip3 install --upgrade pip && pip3 install -U \
       pybase64 mooncake-transfer-engine zmq        \
       uvloop fastapi openai partial_json_parser    \
       sentencepiece compressed_tensors msgspec     \
-      nest_asyncio torchao xgrammar
+      nest_asyncio torchao xgrammar                \
+      uvicorn python-multipart torch_memory_saver  \
+      "debugpy>=1.8.0"
 
 # This variable has been found through trial and errors, increase at you
 # own risk. In case of an emergency exists are located at the front and back of
