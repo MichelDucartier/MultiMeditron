@@ -33,7 +33,7 @@ jobs:
           tags: ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:latest-amd64
 
   docker-arm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     environment: secrets 
 
     steps:
