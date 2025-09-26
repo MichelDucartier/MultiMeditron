@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 import io
 from typing import Optional, Dict, Any, List
+from multimeditron.model.modality_imp.gating import GatingNetwork, GatingNetworkConfig
 
 
 class ImageConfig(ModalityConfig):
@@ -22,6 +23,7 @@ class ImageConfig(ModalityConfig):
             "openai/clip-vit-large-patch14", 
             "openai/clip-vit-large-patch14"
         ],
+        gating_path: str = None,
         top_k_experts: int = 1,
         **kwargs,
     ):
@@ -35,30 +37,7 @@ class ImageConfig(ModalityConfig):
 
         self.expert_clip_names = expert_clip_names
         self.top_k_experts = top_k_experts
-
-
-class MoEGatingNetwork(torch.nn.Module):
-    def __init__(self, num_experts: int, top_k: int = 1):
-        super().__init__()
-        self.top_k = top_k
-        self.clip_model = AutoModel.from_pretrained("openai/clip-vit-large-patch14")
-        self.processor = AutoImageProcessor.from_pretrained("openai/clip-vit-large-patch14")
-
-        self.input_dim = self.clip_model.vision_embed_dim
-        self.gate = torch.nn.Linear(self.input_dim, num_experts)
-
-
-    def forward(self, x):
-        x = self.clip_model.vision_model(x).last_hidden_state[:, 0, :]
-
-        logits = self.gate(x)
-
-        topk_vals, topk_indices = torch.topk(logits, self.top_k, dim=-1)
-
-        weights = torch.nn.functional.softmax(logits, dim=-1)
-
-        return topk_indices, weights
-
+        self.gating_path = gating_path
 
 
 class ImageModality(AbstractModality):
@@ -79,15 +58,15 @@ class ImageModality(AbstractModality):
             self.experts.append(expert_model.vision_model)
 
         self._num_patches_per_entry = (self.experts[0].config.image_size // self.experts[0].config.patch_size) ** 2
-        
-        self.gating_network = MoEGatingNetwork(len(self.experts), config.top_k_experts)
+
+        self.gating_network = AutoModel.from_pretrained(config.gating_path)
         self.image_processor = self.gating_network.processor
 
     def forward(self, inputs) -> torch.FloatTensor:
         device = next(self.experts[0].parameters()).device
         inputs = torch.stack(inputs, dim=0).to(device)
 
-        topk_indices, weights = self.gating_network(inputs)
+        logits, topk_indices, weights = self.gating_network(inputs)
         
         if self.training:
             # Use all experts
