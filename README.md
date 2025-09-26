@@ -9,6 +9,9 @@ To download the project. Execute the following commands:
 ```
 git clone https://github.com/OpenMeditron/MultiMeditron.git
 cd MultiMeditron
+python3 -m venv .venv
+source .venv/bin/activate
+pip install torch
 pip install -e .
 ```
 
