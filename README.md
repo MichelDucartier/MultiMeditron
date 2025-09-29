@@ -155,7 +155,7 @@ Where the `config.yaml` file is described later.
 To train the model, we provide a script to launch the training. The script is located in `train_alignment.py`. To run it, use the following command:
 
 ```bash
-torchrun --nproc-per-node $PROC_PER_NODE train.py --config path/to/config.yaml
+torchrun --nproc-per-node $PROC_PER_NODE -m multimeditron train --config path/to/config.yaml
 ```
 
 The configuration file must contain the following parameters:
