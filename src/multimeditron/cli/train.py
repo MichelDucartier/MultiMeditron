@@ -1,22 +1,22 @@
-from typing import Optional
-from multimeditron.model.modality_imp import MODALITY_CONFIG_FROM_MODEL_TYPE
 from multimeditron.model.model import MultimodalConfig, MultiModalModelForCausalLM, bootstrap
 from multimeditron.model.data_loader import DataCollatorForMultimodal
 from multimeditron.train.trainer import MultimodalTrainer, TRAINING_MAPPING
 from multimeditron.profiling import NvtxAnnotationCallback
 from transformers import AutoTokenizer, TrainingArguments
 from datasets import concatenate_datasets, load_dataset, load_from_disk
+from multimeditron.model.modalities import AutoModality
+from multimeditron.dataset.loader import AutoModalityLoader
+from multimeditron.model.model import MultiModalModelForCausalLM, MultimodalConfig
 from tqdm import tqdm
 import torch
 import os
-import argparse
 import yaml
 from PIL import PngImagePlugin
 from datasets import config as datasets_config
 import wandb
 import multiprocessing
 import click
-from multimeditron.cli import EPILOG, CONFIG_PATH, main_cli
+from multimeditron.cli import EPILOG, main_cli
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,10 +82,15 @@ def train(config: str,
     # Get modalities from configuration
     modalities_config = []
     for modality in config_dict["modalities"]:
-        config_cls = MODALITY_CONFIG_FROM_MODEL_TYPE[modality["model_type"]]
-        modalities_config.append(config_cls(**modality["config"]))
-    
-    
+        modalities_config.append(AutoModality.config_from_dict(modality))
+
+    modalities_loader = dict()
+    for loader in config_dict["loaders"]:
+        loader_copy = loader.copy()
+        loader_type = loader_copy.pop("loader_type")
+        modality_type = loader_copy.pop("modality_type")
+        modalities_loader[modality_type] = AutoModalityLoader.from_name(loader_type, **loader_copy)
+
     import deepspeed
     with deepspeed.zero.Init(dtype=torch.bfloat16):
         if config_dict.get("base_model", None) is None:
@@ -116,12 +121,11 @@ def train(config: str,
             model=model,
             args=training_args,
             data_collator=DataCollatorForMultimodal(
-                padding="longest",
                 tokenizer=tokenizer, 
                 modality_processors=processors,
+                modality_loaders=modalities_loader,
                 tokenizer_type=config_dict["tokenizer_type"],
                 attachment_token_idx=attachment_token_idx,
-                max_length=config_dict.get("max_length", None),
             ),
             train_dataset=dataset,
             training_mode=TRAINING_MAPPING[config_dict["training_mode"]],
