@@ -12,15 +12,23 @@ jobs:
     environment: docker 
 
     steps:
-      - name: Delete huge unnecessary tools folder
+      - name: Move Docker storage to /mnt
         run: |
-          df -h
-          rm -rf /opt/hostedtoolcache
-          sudo swapoff -a
-          sudo rm -f /swapfile
-          sudo apt-get autoremove -y
-          sudo apt clean
-          df -h
+          sudo systemctl stop docker
+          sudo rm -rf /var/lib/docker
+          sudo mkdir /mnt/docker
+          sudo ln -s /mnt/docker /var/lib/docker
+          sudo systemctl start docker
+
+      # - name: Delete huge unnecessary tools folder
+      #   run: |
+      #     df -h
+      #     rm -rf /opt/hostedtoolcache
+      #     sudo swapoff -a
+      #     sudo rm -f /swapfile
+      #     sudo apt-get autoremove -y
+      #     sudo apt clean
+      #     df -h
         
       - name: Checkout repository
         uses: actions/checkout@v4
