@@ -12,7 +12,7 @@ jobs:
     environment: docker 
 
     steps:
-      - name: Move Docker storage to /mnt
+      - name: Move Docker storage to /mnt for more disk space
         run: |
           sudo systemctl stop docker
           sudo rm -rf /var/lib/docker
