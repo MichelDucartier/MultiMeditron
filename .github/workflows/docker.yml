@@ -42,7 +42,7 @@ jobs:
 
   docker-arm:
     runs-on: ubuntu-24.04-arm
-    environment: secrets 
+    environment: docker 
 
     steps:
       - name: Checkout repository
