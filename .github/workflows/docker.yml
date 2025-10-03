@@ -9,7 +9,7 @@ on:
 jobs:
   docker-amd:
     runs-on: ubuntu-latest
-    environment: secrets 
+    environment: docker 
 
     steps:
       - name: Delete huge unnecessary tools folder
