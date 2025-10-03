@@ -20,16 +20,6 @@ jobs:
           sudo ln -s /mnt/docker /var/lib/docker
           sudo systemctl start docker
 
-      # - name: Delete huge unnecessary tools folder
-      #   run: |
-      #     df -h
-      #     rm -rf /opt/hostedtoolcache
-      #     sudo swapoff -a
-      #     sudo rm -f /swapfile
-      #     sudo apt-get autoremove -y
-      #     sudo apt clean
-      #     df -h
-        
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -48,17 +38,15 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:latest-amd64
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:latest-amd64
+            ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:${{ github.sha }}-amd64
 
   docker-arm:
     runs-on: ubuntu-24.04-arm
     environment: docker 
 
     steps:
-      - name: Show available space
-        run: |
-          df -h
-          
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -77,5 +65,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:latest-arm64
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:latest-arm64
+            ${{ secrets.DOCKER_USERNAME }}/multimeditron-git:${{ github.sha }}-arm64
 
